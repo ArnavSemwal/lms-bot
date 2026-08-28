@@ -9,7 +9,7 @@ load_dotenv()
 COOKIES_PATH = os.getenv("COOKIES_PATH", "cookies.json")
 DASHBOARD_URL = "https://lms.vit.ac.in/my/"
 
-# Tera VIP list right here
+# Tera VIP list
 TARGET_COURSES = ["BACSE106", "BACSE201", "BACSE202", "BACSE344", "BAHUM202"]
 
 def get_client():
@@ -31,14 +31,23 @@ def fetch_enrolled_courses(client):
             val = option.get('value')
             cname = option.get_text(strip=True)
             if val and val.isdigit() and val not in ["0", "1"]:
-                # Filter logic: Agar cname me tera target code hai, tabhi uthao
                 if any(code in cname for code in TARGET_COURSES):
                     courses[val] = cname
     return courses
 
 def fetch_assignments(client, course_id):
     url = f"https://lms.vit.ac.in/mod/assign/index.php?id={course_id}"
-    res = client.get(url)
+    
+    # Innovative guardrail: Yaha loop fasa toh sidha skip maarenge
+    try:
+        res = client.get(url)
+    except httpx.TooManyRedirects:
+        print(f"  ⚠️ Skipping course ID {course_id} - LMS redirect loop glitch!")
+        return []
+    except Exception as e:
+        print(f"  ⚠️ Network error on {course_id}: {e}")
+        return []
+        
     soup = BeautifulSoup(res.text, "html.parser")
     assignments = []
     
@@ -61,20 +70,3 @@ def fetch_assignments(client, course_id):
                 "due_date": due_date
             })
     return assignments
-
-if __name__ == "__main__":
-    print("🚀 Initializing focused scraper...")
-    client = get_client()
-    courses = fetch_enrolled_courses(client)
-    print(f"✅ Found {len(courses)} active target courses.\n")
-    
-    for cid, cname in courses.items():
-        print(f"--- Checking {cname} ---")
-        assigns = fetch_assignments(client, cid)
-        if not assigns:
-            print("  No assignments found abhi tak.")
-        for a in assigns:
-            print(f"  📌 {a['title']}")
-            print(f"     Due: {a['due_date']}")
-            print(f"     Link: {a['url']}")
-        print("")
