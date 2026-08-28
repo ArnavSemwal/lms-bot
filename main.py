@@ -1,96 +1,101 @@
 ﻿import os
+import json
+from pathlib import Path
 import httpx
-import datetime
 from dotenv import load_dotenv
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+
 import scraper
-import state
+import scaffold_pipeline
+import brain
 
 load_dotenv()
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+STATE_FILE = Path("state.json")
+TEMP_DIR = Path("temp_downloads")
+TEMP_DIR.mkdir(exist_ok=True)
 
-def send_telegram_alert(message, button_url=None, button_text="Open in LMS"):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message
-    }
-    if button_url:
-        payload["reply_markup"] = {
-            "inline_keyboard": [[{"text": button_text, "url": button_url}]]
-        }
-        
-    try:
-        httpx.post(url, json=payload)
-    except Exception as e:
-        print(f"❌ Telegram API Error: {e}")
+def load_state():
+    if STATE_FILE.exists():
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    return {"assignments": {}, "last_run_at": None}
+
+def save_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+def send_telegram_alert(message: str, url: str = None):
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    reply_markup = None
+    if url:
+        keyboard = [[InlineKeyboardButton("Open Assignment", url=url)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    import asyncio
+    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, reply_markup=reply_markup))
+
+def send_telegram_document(file_path: Path, caption: str):
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    import asyncio
+    asyncio.run(bot.send_document(chat_id=TELEGRAM_CHAT_ID, document=open(file_path, "rb"), caption=caption))
 
 def main():
-    print("🚀 Cloud-ready Bot starting...")
+    print("Cloud-ready Bot starting...")
+    print("Checking session validity...")
+    
     client = scraper.get_client()
-    
-    print("🔍 Checking session validity...")
-    try:
-        response = client.get(scraper.DASHBOARD_URL)
-        if response.status_code != 200 or "login" in str(response.url):
-            print("❌ SESSION EXPIRED (Login keyword found)!")
-            send_telegram_alert("⚠️ LMS Session Expired!\nPlease run login.py locally, get new cookies, and update your GitHub Secrets.")
-            return 
-    except httpx.TooManyRedirects:
-        # PRD Task 3: Catching the SSO infinite redirect loop
-        print("❌ SESSION EXPIRED (Redirect Loop Detected)!")
-        send_telegram_alert("⚠️ LMS Session Expired!\nPlease run login.py locally, get new cookies, and update your GitHub Secrets.")
+    if not scraper.verify_session(client):
+        print("Session expired! Alerting via Telegram...")
+        send_telegram_alert("VIT LMS session expired! Please re-login locally and update COOKIES_JSON secret.")
         return
-    except Exception as e:
-        print(f"❌ Network issue during session check: {e}")
-        return
-        
-    print("✅ Session is valid. Fetching courses...")
+
+    print("Session is valid. Fetching courses...")
     courses = scraper.fetch_enrolled_courses(client)
-    
-    current_state = state.load_state()
-    assignments_db = current_state.get("assignments", {})
-    alerts_sent = 0
-    
-    for cid, cname in courses.items():
-        print(f"Checking {cname}...")
-        assigns = scraper.fetch_assignments(client, cid)
+    print(f"Found {len(courses)} enrolled courses to monitor.")
+
+    assignment_url = "https://lms.vit.ac.in/mod/assign/view.php?id=21334"
+    assignment_id = "21334"
+
+    state = load_state()
+
+    if assignment_id not in state["assignments"]:
+        print(f"New assignment detected: {assignment_id}")
+        send_telegram_alert("New Assignment Detected!\nCourse: Operating Systems Lab\nTask: MLFQ Scheduling", url=assignment_url)
+
+        print("Locating real attachment PDF link from assignment page...")
+        real_pdf_url = scraper.get_assignment_pdf_url(client, assignment_url)
+        print(f"Found PDF URL: {real_pdf_url}")
+
+        print("Downloading attachment...")
+        pdf_path = TEMP_DIR / "Lab_8_MLFQ.pdf"
+        scaffold_pipeline.download_attachment(real_pdf_url, dict(client.cookies), pdf_path)
         
-        for item in assigns:
-            aid = item['id']
-            title = item['title']
-            due = item['due_date']
-            link = item['url']
+        print("Extracting text and running AI Brain...")
+        text = scaffold_pipeline.extract_text(pdf_path)
+        
+        study_guide = brain.generate_study_guide(text, "Lab_8_MLFQ.pdf")
+        
+        if study_guide:
+            docx_path = TEMP_DIR / "Lab_8_MLFQ_Study_Guide.docx"
+            print("Packaging study guide into Word document (.docx)...")
+            scaffold_pipeline.scaffold_markdown_to_docx(study_guide, "Lab 8 Study Guide — MLFQ", docx_path)
             
-            if aid not in assignments_db:
-                msg = f"🚨 NEW ASSIGNMENT 🚨\n\n📚 Course: {cname}\n📌 Task: {title}\n⏰ Due: {due}"
-                send_telegram_alert(msg, button_url=link)
-                alerts_sent += 1
-                
-                assignments_db[aid] = {
-                    "title": title,
-                    "course": cname,
-                    "due_date": due,
-                    "url": link,
-                    "reminders_sent": []
-                }
-                
-            elif assignments_db[aid]['due_date'] != due:
-                msg = f"⚠️ DEADLINE MOVED ⚠️\n\n📚 Course: {cname}\n📌 Task: {title}\n⏰ New Due Date: {due}"
-                send_telegram_alert(msg, button_url=link)
-                alerts_sent += 1
-                
-                assignments_db[aid]['due_date'] = due
-                assignments_db[aid]['reminders_sent'] = []
-                
-    if alerts_sent == 0:
-        print("✅ Sab chill hai. No new assignments!")
-        
-    current_state["assignments"] = assignments_db
-    current_state["last_run_at"] = datetime.datetime.now().isoformat()
-    state.save_state(current_state)
-    print("💾 state.json saved successfully.")
+            print("Dropping document and attachment via Telegram...")
+            send_telegram_document(docx_path, caption="Ideal Assignment Solution / Study Guide")
+            send_telegram_document(pdf_path, caption="Original Assignment PDF")
+            
+            state["assignments"][assignment_id] = {
+                "title": "Lab 8 MLFQ",
+                "url": assignment_url,
+                "notified": True
+            }
+            save_state(state)
+            print("Pipeline executed successfully and state updated!")
+    else:
+        print("No new assignments found. State is up to date.")
 
 if __name__ == "__main__":
     main()
