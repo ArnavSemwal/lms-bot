@@ -30,6 +30,21 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           COOKIES_JSON: ${{ secrets.COOKIES_JSON }}
         run: |
-          # Write cookies.json from secret
-          echo "$COOKIES_JSON" > cookies.json
+          python << 'EOF'
+          import json
+          import os
+          import sys    
+          cookies_json = os.getenv('COOKIES_JSON', '').strip()
+          if not cookies_json:
+              print("Error: COOKIES_JSON secret is not set")
+              sys.exit(1)
+          
+          try:
+              cookies = json.loads(cookies_json)
+              with open('cookies.json', 'w') as f:
+                  json.dump(cookies, f)
+          except json.JSONDecodeError as e:
+              print(f"Error: Invalid JSON in COOKIES_JSON secret: {e}")
+              sys.exit(1)
+          EOF
           python main.py
