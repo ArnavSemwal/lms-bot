@@ -52,50 +52,68 @@ def main():
         send_telegram_alert("VIT LMS session expired! Please re-login locally and update COOKIES_JSON secret.")
         return
 
-    print("Session is valid. Fetching courses...")
+    print("Session is valid. Fetching enrolled courses...")
     courses = scraper.fetch_enrolled_courses(client)
     print(f"Found {len(courses)} enrolled courses to monitor.")
 
-    assignment_url = "https://lms.vit.ac.in/mod/assign/view.php?id=21334"
-    assignment_id = "21334"
-
     state = load_state()
+    new_found_count = 0
 
-    if assignment_id not in state["assignments"]:
-        print(f"New assignment detected: {assignment_id}")
-        send_telegram_alert("New Assignment Detected!\nCourse: Operating Systems Lab\nTask: MLFQ Scheduling", url=assignment_url)
+    for course in courses:
+        print(f"Checking course: {course['title']}")
+        assignments = scraper.fetch_course_assignments(client, course)
+        print(f"Found {len(assignments)} assignments in {course['title']}.")
 
-        print("Locating real attachment PDF link from assignment page...")
-        real_pdf_url = scraper.get_assignment_pdf_url(client, assignment_url)
-        print(f"Found PDF URL: {real_pdf_url}")
+        for assign in assignments:
+            assign_id = assign["id"]
+            assign_url = assign["url"]
+            assign_title = assign["title"]
 
-        print("Downloading attachment...")
-        pdf_path = TEMP_DIR / "Lab_8_MLFQ.pdf"
-        scaffold_pipeline.download_attachment(real_pdf_url, dict(client.cookies), pdf_path)
-        
-        print("Extracting text and running AI Brain...")
-        text = scaffold_pipeline.extract_text(pdf_path)
-        
-        study_guide = brain.generate_study_guide(text, "Lab_8_MLFQ.pdf")
-        
-        if study_guide:
-            docx_path = TEMP_DIR / "Lab_8_MLFQ_Study_Guide.docx"
-            print("Packaging study guide into Word document (.docx)...")
-            scaffold_pipeline.scaffold_markdown_to_docx(study_guide, "Lab 8 Study Guide — MLFQ", docx_path)
-            
-            print("Dropping document and attachment via Telegram...")
-            send_telegram_document(docx_path, caption="Ideal Assignment Solution / Study Guide")
-            send_telegram_document(pdf_path, caption="Original Assignment PDF")
-            
-            state["assignments"][assignment_id] = {
-                "title": "Lab 8 MLFQ",
-                "url": assignment_url,
-                "notified": True
-            }
-            save_state(state)
-            print("Pipeline executed successfully and state updated!")
+            if assign_id not in state["assignments"]:
+                new_found_count += 1
+                print(f"New assignment detected: {assign_id} - {assign_title}")
+                send_telegram_alert(f"New Assignment Detected!\nCourse: {course['title']}\nTask: {assign_title}", url=assign_url)
+
+                print("Locating real attachment PDF link from assignment page...")
+                real_pdf_url = scraper.get_assignment_pdf_url(client, assign_url)
+                print(f"Found PDF URL: {real_pdf_url}")
+
+                if "pluginfile.php" in real_pdf_url or real_pdf_url.endswith(".pdf"):
+                    print("Downloading attachment...")
+                    pdf_filename = f"Assignment_{assign_id}.pdf"
+                    pdf_path = TEMP_DIR / pdf_filename
+                    try:
+                        scaffold_pipeline.download_attachment(real_pdf_url, dict(client.cookies), pdf_path)
+                        
+                        print("Extracting text and running AI Brain...")
+                        text = scaffold_pipeline.extract_text(pdf_path)
+                        
+                        study_guide = brain.generate_study_guide(text, pdf_filename)
+                        
+                        if study_guide:
+                            docx_filename = f"Assignment_{assign_id}_Study_Guide.docx"
+                            docx_path = TEMP_DIR / docx_filename
+                            print("Packaging study guide into Word document (.docx)...")
+                            scaffold_pipeline.scaffold_markdown_to_docx(study_guide, f"Study Guide — {assign_title}", docx_path)
+                            
+                            print("Dropping document and attachment via Telegram...")
+                            send_telegram_document(docx_path, caption=f"Ideal Solution / Study Guide: {assign_title}")
+                            send_telegram_document(pdf_path, caption=f"Original Assignment PDF: {assign_title}")
+                    except Exception as e:
+                        print(f"⚠️ Error processing attachment for assignment {assign_id}: {e}")
+
+                state["assignments"][assign_id] = {
+                    "title": assign_title,
+                    "course": course['title'],
+                    "url": assign_url,
+                    "notified": True
+                }
+                save_state(state)
+
+    if new_found_count == 0:
+        print("No new assignments found across any course. State is up to date.")
     else:
-        print("No new assignments found. State is up to date.")
+        print(f"Successfully processed {new_found_count} new assignments!")
 
 if __name__ == "__main__":
     main()

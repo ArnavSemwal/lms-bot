@@ -22,7 +22,6 @@ def get_client():
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": BASE_URL
     }
-    # Force HTTP/1.1 to prevent Moodle/WAF protocol drop issues, disable SSL verify for local network
     return httpx.Client(
         cookies=cookies,
         headers=headers,
@@ -44,12 +43,49 @@ def verify_session(client: httpx.Client) -> bool:
         return False
 
 def fetch_enrolled_courses(client: httpx.Client):
+    """Returns active monitored courses/assignments directly."""
     return [
-        {"title": "Operating Systems Lab (MLFQ)", "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21334"}
+        {
+            "title": "Operating Systems Lab", 
+            "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21334",
+            "is_direct_assignment": True,
+            "assignment_id": "21334"
+        }
     ]
 
+def fetch_course_assignments(client: httpx.Client, course_info):
+    """Handles both direct assignment links and course page scraping."""
+    if course_info.get("is_direct_assignment"):
+        return [{
+            "id": course_info["assignment_id"],
+            "title": "Lab 8 MLFQ",
+            "url": course_info["url"]
+        }]
+        
+    resp = client.get(course_info["url"])
+    soup = BeautifulSoup(resp.text, 'html.parser')
+    assignments = []
+    
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        if '/mod/assign/view.php?id=' in href:
+            title = a.get_text(strip=True)
+            import urllib.parse
+            parsed_url = urllib.parse.urlparse(href)
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            assign_id = query_params.get('id', [None])[0]
+            
+            if assign_id and not any(d['id'] == assign_id for d in assignments):
+                assignments.append({
+                    "id": assign_id,
+                    "title": title or f"Assignment {assign_id}",
+                    "url": href
+                })
+                
+    return assignments
+
 def get_assignment_pdf_url(client: httpx.Client, assign_url: str) -> str:
-    """Scrapes the assignment view page to find the actual pluginfile.php PDF link with a retry wrapper."""
+    """Scrapes the assignment view page to find the actual pluginfile.php PDF link."""
     for attempt in range(3):
         try:
             resp = client.get(assign_url)
