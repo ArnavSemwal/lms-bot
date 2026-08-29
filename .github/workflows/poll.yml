@@ -40,7 +40,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install playwright
 
       - name: Restore cached session cookies
         env:
