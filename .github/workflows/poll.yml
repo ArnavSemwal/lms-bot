@@ -90,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           if [ -f cookies.json ] && [ -n "$GH_TOKEN" ]; then
-            gh secret set COOKIES_JSON --repo "${{ github.repository }}" < cookies.json
+            gh secret set COOKIES_JSON --repo "${{ github.repository }}" -b "$(cat cookies.json)"
           elif [ -z "$GH_TOKEN" ]; then
             echo "::warning::GH_PAT secret not set. Skipping COOKIES_JSON auto-refresh."
           fi
