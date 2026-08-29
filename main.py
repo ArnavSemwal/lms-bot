@@ -67,7 +67,7 @@ def main(target_course=None, target_chat_id=None):
             print("Auto-login successful! Fresh cookies saved.")
             client = scraper.get_client()
         except Exception as e:
-            print(f"⚠️ Auto-login failed: {e}")
+            print(f"Warning: Auto-login failed: {e}")
             send_telegram_alert("VIT LMS session expired and auto-login failed! Please check credentials.", chat_id=target_chat_id)
             return
 
@@ -90,7 +90,7 @@ def main(target_course=None, target_chat_id=None):
 
     for course in courses:
         print(f"Checking course: {course['title']}")
-        assignments = scraper.fetch_course_assignments(client, course)
+        assignments = scraper.fetch_course_assignments(client, course["id"])
         print(f"Found {len(assignments)} assignments in {course['title']}.")
 
         for assign in assignments:
@@ -124,13 +124,13 @@ def main(target_course=None, target_chat_id=None):
                             docx_filename = f"Assignment_{assign_id}_Study_Guide.docx"
                             docx_path = TEMP_DIR / docx_filename
                             print("Packaging study guide into Word document (.docx)...")
-                            scaffold_pipeline.scaffold_markdown_to_docx(study_guide, f"Study Guide — {assign_title}", docx_path)
+                            scaffold_pipeline.scaffold_markdown_to_docx(study_guide, f"Study Guide - {assign_title}", docx_path)
                             
                             print("Dropping document and attachment via Telegram...")
                             send_telegram_document(docx_path, caption=f"Ideal Solution / Study Guide: {assign_title}", chat_id=target_chat_id)
                             send_telegram_document(pdf_path, caption=f"Original Assignment PDF: {assign_title}", chat_id=target_chat_id)
                     except Exception as e:
-                        print(f"⚠️ Error processing attachment for assignment {assign_id}: {e}")
+                        print(f"Warning: Error processing attachment for assignment {assign_id}: {e}")
 
                 state["assignments"][assign_id] = {
                     "title": assign_title,
@@ -153,7 +153,7 @@ def main(target_course=None, target_chat_id=None):
     if new_found_count == 0:
         print("No new assignments found. State is up to date.")
         if target_chat_id:
-            send_telegram_alert("Check complete! Koi nayi assignment nahi mili. Sab kuch up-to-date hai! 🎯", chat_id=target_chat_id)
+            send_telegram_alert("Check complete! Koi nayi assignment nahi mili. Sab kuch up-to-date hai! :)", chat_id=target_chat_id)
     else:
         print(f"Successfully processed {new_found_count} new assignments!")
         if target_chat_id:
