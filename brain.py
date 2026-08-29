@@ -1,44 +1,60 @@
 ﻿import os
 from google import genai
-from google.genai import types
-from dotenv import load_dotenv
 
-load_dotenv()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+def _to_gemini_contents(messages: list[dict]) -> tuple[str, list[dict]]:
+    system_text = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+    role_map = {"user": "user", "assistant": "model", "model": "model"}
+    contents = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        gemini_role = role_map.get(m["role"], "user")
+        contents.append({"role": gemini_role, "parts": [{"text": m["content"]}]})
+    return system_text, contents
 
-EXACT_SOLUTION_PROMPT = """
-Analyze the assignment provided below thoroughly.
-First, provide a clear, concise 3 to 4-line summary explaining what the assignment is asking for and what key concepts or elements need to be included in the response.
-Next, provide the complete, comprehensive theoretical solution for every single requirement and instruction mentioned in the assignment (such as Gantt charts, step-by-step logs, calculation tables, metrics, and analysis). 
+def llm_call(messages: list[dict]) -> str:
+    system_text, contents = _to_gemini_contents(messages)
+    response = _client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=contents,
+        config={"system_instruction": system_text} if system_text else None,
+    )
+    return response.text
 
-CRITICAL NEGATIVE CONSTRAINT:
-- DO NOT WRITE ANY C, C++, Python, or any other programming code. 
-- DO NOT include code snippets, class structures, skeleton code, or implementation scripts. 
-- Deliver purely theoretical analysis and answers only.
-
-Keep the tone straightforward, practical, and strictly in English.
-"""
-
-def generate_study_guide(text, file_name):
-    if not GEMINI_API_KEY:
-        print("⚠️ GEMINI_API_KEY missing in .env file!")
-        return None
-        
-    print(f"🧠 Waking up AI Brain for theoretical assignment solution on {file_name}...")
+def generate_study_guide(text: str, filename: str) -> str:
+    print(f"🧠 Waking up AI Brain for clean structured study guide on {filename}...")
+    
+    # Prompt upgraded with strict negative constraints
+    system_prompt = (
+        "You are an expert academic AI assistant. Generate a highly structured, "
+        "comprehensive study guide and solution approach for the provided assignment text. "
+        "Use clear Markdown headings, bullet points, and step-by-step logical breakdowns. "
+        "STRICT CONSTRAINTS: "
+        "1. DO NOT write, include, or generate any source code, programming blocks, or scripts "
+        "(e.g., absolutely no C, C++, Python, Java). Focus ONLY on theory, mathematical logic, "
+        "and step-by-step simulation. "
+        "2. DO NOT use LaTeX formatting or complex math delimiters (like $, \\frac, \\sum). "
+        "Write formulas using plain text and standard keyboard symbols (e.g., 'Avg TAT = Total TAT / N') "
+        "so they render cleanly in standard word processors."
+    )
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Assignment File: {filename}\n\nExtracted Text from PDF:\n{text}\n\nPlease analyze this and generate the detailed study guide."}
+    ]
     
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        prompt = f"Assignment text:\n{text}"
-        
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=EXACT_SOLUTION_PROMPT,
-            )
-        )
-        return response.text
+        return llm_call(messages)
     except Exception as e:
-        print(f"❌ AI Generation Error: {e}")
-        return None
+        print(f"⚠️ AI generation error: {e}")
+        return ""
+
+def list_available_models() -> None:
+    for m in _client.models.list():
+        print(m.name)
+
+if __name__ == "__main__":
+    list_available_models()

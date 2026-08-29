@@ -1,19 +1,30 @@
 ﻿import os
+import sys
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 import httpx
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+# FIX: API keys pehle load hongi memory me
+load_dotenv()
+
+# Usk baad local modules import honge taaki unhe keys mil sakein
 import scraper
 import scaffold_pipeline
 import brain
-
-load_dotenv()
+import auto_login
+import reminder
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 STATE_FILE = Path("state.json")
+COOKIES_FILE = Path("cookies.json")
 TEMP_DIR = Path("temp_downloads")
 TEMP_DIR.mkdir(exist_ok=True)
 
@@ -48,9 +59,16 @@ def main():
     
     client = scraper.get_client()
     if not scraper.verify_session(client):
-        print("Session expired! Alerting via Telegram...")
-        send_telegram_alert("VIT LMS session expired! Please re-login locally and update COOKIES_JSON secret.")
-        return
+        print("Session expired! Triggering automated Playwright re-login...")
+        try:
+            cookies = auto_login.auto_login(headless=True)
+            auto_login.save_cookies(cookies, COOKIES_FILE)
+            print("Auto-login successful! Fresh cookies saved.")
+            client = scraper.get_client() # Reload client with new cookies
+        except Exception as e:
+            print(f"⚠️ Auto-login failed: {e}")
+            send_telegram_alert("VIT LMS session expired and auto-login failed! Please check credentials.")
+            return
 
     print("Session is valid. Fetching enrolled courses...")
     courses = scraper.fetch_enrolled_courses(client)
@@ -68,6 +86,7 @@ def main():
             assign_id = assign["id"]
             assign_url = assign["url"]
             assign_title = assign["title"]
+            due_date = assign.get("due_date") # Ensure scraper returns due_date if available, or fallback
 
             if assign_id not in state["assignments"]:
                 new_found_count += 1
@@ -106,9 +125,20 @@ def main():
                     "title": assign_title,
                     "course": course['title'],
                     "url": assign_url,
+                    "due_date": due_date if due_date else "2026-12-31T23:59:59+00:00", # Fallback safety
+                    "reminders_sent": [],
                     "notified": True
                 }
                 save_state(state)
+
+    # Run deadline reminder checks
+    print("Checking assignment reminders...")
+    state = reminder.check_reminders(
+        state, 
+        datetime.now(timezone.utc), 
+        lambda msg: send_telegram_alert(msg)
+    )
+    save_state(state)
 
     if new_found_count == 0:
         print("No new assignments found across any course. State is up to date.")

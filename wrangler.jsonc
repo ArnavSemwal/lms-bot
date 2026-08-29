@@ -1,0 +1,5 @@
+{
+  "name": "lms-bot-worker",
+  "compatibility_date": "2026-08-28",
+  "main": "telegram_webhook_worker.js"
+}
