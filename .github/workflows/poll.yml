@@ -1,50 +1,82 @@
-﻿name: Poll VIT LMS Assignments
+﻿name: LMS Bot Poll
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Runs every 4 hours
-  workflow_dispatch:        # Allows manual trigger from GitHub UI
+    - cron: '0 8,10,12,14,16,18,20,22 * * 2,4'
+    - cron: '0 8,13,18,23 * * 0,1,3,5,6'
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [check_course]
 
 jobs:
-  poll:
+  run-bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          playwright install --with-deps chromium
 
-      - name: Run LMS Bot
+      - name: Restore cached session cookies
         env:
+          COOKIES_JSON: ${{ secrets.COOKIES_JSON }}
+        run: |
+          if [ -n "$COOKIES_JSON" ]; then
+            echo "$COOKIES_JSON" > cookies.json
+          fi
+
+      - name: Run scheduled full sweep
+        if: github.event_name != 'repository_dispatch'
+        env:
+          LMS_USERNAME: ${{ secrets.LMS_USERNAME }}
+          LMS_PASSWORD: ${{ secrets.LMS_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          COOKIES_JSON: ${{ secrets.COOKIES_JSON }}
+        run: python main.py
+
+      - name: Run on-demand single-course check
+        if: github.event_name == 'repository_dispatch'
+        env:
+          LMS_USERNAME: ${{ secrets.LMS_USERNAME }}
+          LMS_PASSWORD: ${{ secrets.LMS_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python << 'EOF'
-          import json
-          import os
-          import sys    
-          cookies_json = os.getenv('COOKIES_JSON', '').strip()
-          if not cookies_json:
-              print("Error: COOKIES_JSON secret is not set")
-              sys.exit(1)
-          
-          try:
-              cookies = json.loads(cookies_json)
-              with open('cookies.json', 'w') as f:
-                  json.dump(cookies, f)
-          except json.JSONDecodeError as e:
-              print(f"Error: Invalid JSON in COOKIES_JSON secret: {e}")
-              sys.exit(1)
-          EOF
-          python main.py
+          python main.py \
+            --course "${{ github.event.client_payload.course }}" \
+            --chat-id "${{ github.event.client_payload.chat_id }}"
+
+      - name: Persist fresh session cookies as a secret
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -f cookies.json ]; then
+            gh secret set COOKIES_JSON --repo "${{ github.repository }}" --body-file=cookies.json
+          fi
+
+      - name: Commit updated state.json
+        if: success()
+        run: |
+          git config user.name "lms-bot"
+          git config user.email "lms-bot@users.noreply.github.com"
+          git pull --rebase
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git add state.json
+            git commit -m "Update state.json [skip ci]"
+            git push
+          else
+            echo "No state.json changes to commit."
+          fi
