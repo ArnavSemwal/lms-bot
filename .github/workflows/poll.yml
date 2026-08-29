@@ -1,9 +1,25 @@
-﻿name: LMS Bot Poll
+# .github/workflows/poll.yml
+#
+# Place this file at .github/workflows/poll.yml in your repo.
+#
+# Listens for THREE trigger types:
+#   1. schedule       - lab-day-aware polling (Tue/Thu every 2h, other days every 5h)
+#   2. workflow_dispatch - manual "Run workflow" button in GitHub's UI
+#   3. repository_dispatch (check_course) - fired by the Cloudflare Worker
+#      when you tap a course button in Telegram
+#
+# IMPORTANT: this assumes main.py accepts two optional CLI args:
+#   --course <value>     -> scrape just this one course, not the full sweep
+#   --chat-id <id>        -> reply to this specific Telegram chat
+# If main.py doesn't yet support these, that's the next thing to add before
+# this workflow's on-demand path will do anything useful.
+
+name: LMS Bot Poll
 
 on:
   schedule:
-    - cron: '0 8,10,12,14,16,18,20,22 * * 2,4'
-    - cron: '0 8,13,18,23 * * 0,1,3,5,6'
+    - cron: '0 8,10,12,14,16,18,20,22 * * 2,4'   # Tue/Thu, every 2h, 8AM-10PM UTC
+    - cron: '0 8,13,18,23 * * 0,1,3,5,6'          # other days, every 5h, 8AM-11PM UTC
   workflow_dispatch: {}
   repository_dispatch:
     types: [check_course]
@@ -12,7 +28,7 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write   # needed to commit state.json back
 
     steps:
       - name: Checkout repo
@@ -23,11 +39,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install playwright
-          python -m playwright install --with-deps chromium
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
 
       - name: Restore cached session cookies
         env:
@@ -36,6 +49,15 @@ jobs:
           if [ -n "$COOKIES_JSON" ]; then
             echo "$COOKIES_JSON" > cookies.json
           fi
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Playwright browser + system dependencies
+        run: python -m playwright install --with-deps chromium
 
       - name: Run scheduled full sweep
         if: github.event_name != 'repository_dispatch'
@@ -64,8 +86,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          if [ -f cookies.json ]; then
+          if [ -f cookies.json ] && [ -n "$GH_TOKEN" ]; then
             gh secret set COOKIES_JSON --repo "${{ github.repository }}" --body-file=cookies.json
+          elif [ -z "$GH_TOKEN" ]; then
+            echo "::warning::GH_PAT secret not set — skipping COOKIES_JSON auto-refresh. Add a repo-scoped PAT as GH_PAT to enable this."
           fi
 
       - name: Commit updated state.json
@@ -73,10 +97,10 @@ jobs:
         run: |
           git config user.name "lms-bot"
           git config user.email "lms-bot@users.noreply.github.com"
-          git pull --rebase
           if [ -n "$(git status --porcelain state.json)" ]; then
             git add state.json
             git commit -m "Update state.json [skip ci]"
+            git pull --rebase
             git push
           else
             echo "No state.json changes to commit."

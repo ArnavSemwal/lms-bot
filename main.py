@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import json
 from pathlib import Path
@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import httpx
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+
+import argparse
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -38,7 +40,11 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
 
-def send_telegram_alert(message: str, url: str = None):
+def send_telegram_alert(message: str, url: str = None, chat_id: str = None):
+    target_chat_id = chat_id or TELEGRAM_CHAT_ID
+    if not target_chat_id:
+        print("⚠️ No Telegram Chat ID specified!")
+        return
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     reply_markup = None
     if url:
@@ -46,14 +52,25 @@ def send_telegram_alert(message: str, url: str = None):
         reply_markup = InlineKeyboardMarkup(keyboard)
     
     import asyncio
-    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, reply_markup=reply_markup))
+    asyncio.run(bot.send_message(chat_id=target_chat_id, text=message, reply_markup=reply_markup))
 
-def send_telegram_document(file_path: Path, caption: str):
+def send_telegram_document(file_path: Path, caption: str, chat_id: str = None):
+    target_chat_id = chat_id or TELEGRAM_CHAT_ID
+    if not target_chat_id:
+        print("⚠️ No Telegram Chat ID specified!")
+        return
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     import asyncio
-    asyncio.run(bot.send_document(chat_id=TELEGRAM_CHAT_ID, document=open(file_path, "rb"), caption=caption))
+    asyncio.run(bot.send_document(chat_id=target_chat_id, document=open(file_path, "rb"), caption=caption))
 
 def main():
+    parser = argparse.ArgumentParser(description="LMS Bot Sweep & Check")
+    parser.add_argument("--course", type=str, help="Specific course title or ID to filter", default=None)
+    parser.add_argument("--chat-id", type=str, help="Telegram chat ID for alert delivery", default=None)
+    args = parser.parse_args()
+
+    target_chat_id = args.chat_id or TELEGRAM_CHAT_ID
+
     print("Cloud-ready Bot starting...")
     print("Checking session validity...")
     
@@ -67,12 +84,22 @@ def main():
             client = scraper.get_client() # Reload client with new cookies
         except Exception as e:
             print(f"⚠️ Auto-login failed: {e}")
-            send_telegram_alert("VIT LMS session expired and auto-login failed! Please check credentials.")
+            send_telegram_alert("VIT LMS session expired and auto-login failed! Please check credentials.", chat_id=target_chat_id)
             return
 
     print("Session is valid. Fetching enrolled courses...")
     courses = scraper.fetch_enrolled_courses(client)
-    print(f"Found {len(courses)} enrolled courses to monitor.")
+
+    if args.course:
+        target_filter = args.course.strip().lower()
+        courses = [
+            c for c in courses 
+            if target_filter in c.get("title", "").lower() 
+            or target_filter == c.get("assignment_id", "").lower()
+        ]
+        print(f"Filtered down to {len(courses)} matching course(s) for query: '{args.course}'")
+    else:
+        print(f"Found {len(courses)} enrolled courses to monitor.")
 
     state = load_state()
     new_found_count = 0
@@ -91,7 +118,11 @@ def main():
             if assign_id not in state["assignments"]:
                 new_found_count += 1
                 print(f"New assignment detected: {assign_id} - {assign_title}")
-                send_telegram_alert(f"New Assignment Detected!\nCourse: {course['title']}\nTask: {assign_title}", url=assign_url)
+                send_telegram_alert(
+                    f"New Assignment Detected!\nCourse: {course['title']}\nTask: {assign_title}", 
+                    url=assign_url, 
+                    chat_id=target_chat_id
+                )
 
                 print("Locating real attachment PDF link from assignment page...")
                 real_pdf_url = scraper.get_assignment_pdf_url(client, assign_url)
@@ -116,8 +147,8 @@ def main():
                             scaffold_pipeline.scaffold_markdown_to_docx(study_guide, f"Study Guide — {assign_title}", docx_path)
                             
                             print("Dropping document and attachment via Telegram...")
-                            send_telegram_document(docx_path, caption=f"Ideal Solution / Study Guide: {assign_title}")
-                            send_telegram_document(pdf_path, caption=f"Original Assignment PDF: {assign_title}")
+                            send_telegram_document(docx_path, caption=f"Ideal Solution / Study Guide: {assign_title}", chat_id=target_chat_id)
+                            send_telegram_document(pdf_path, caption=f"Original Assignment PDF: {assign_title}", chat_id=target_chat_id)
                     except Exception as e:
                         print(f"⚠️ Error processing attachment for assignment {assign_id}: {e}")
 
@@ -136,7 +167,7 @@ def main():
     state = reminder.check_reminders(
         state, 
         datetime.now(timezone.utc), 
-        lambda msg: send_telegram_alert(msg)
+        lambda msg: send_telegram_alert(msg, chat_id=target_chat_id)
     )
     save_state(state)
 
