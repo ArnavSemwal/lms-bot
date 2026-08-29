@@ -26,6 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
+          pip install playwright
           playwright install --with-deps chromium
 
       - name: Restore cached session cookies
