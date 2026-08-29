@@ -1,22 +1,19 @@
-import os
+﻿import os
 import sys
 import json
+import argparse
 from pathlib import Path
 from datetime import datetime, timezone
 import httpx
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
-import argparse
-
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-# FIX: API keys pehle load hongi memory me
 load_dotenv()
 
-# Usk baad local modules import honge taaki unhe keys mil sakein
 import scraper
 import scaffold_pipeline
 import brain
@@ -41,10 +38,7 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 def send_telegram_alert(message: str, url: str = None, chat_id: str = None):
-    target_chat_id = chat_id or TELEGRAM_CHAT_ID
-    if not target_chat_id:
-        print("⚠️ No Telegram Chat ID specified!")
-        return
+    target_chat = chat_id or TELEGRAM_CHAT_ID
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     reply_markup = None
     if url:
@@ -52,25 +46,15 @@ def send_telegram_alert(message: str, url: str = None, chat_id: str = None):
         reply_markup = InlineKeyboardMarkup(keyboard)
     
     import asyncio
-    asyncio.run(bot.send_message(chat_id=target_chat_id, text=message, reply_markup=reply_markup))
+    asyncio.run(bot.send_message(chat_id=target_chat, text=message, reply_markup=reply_markup))
 
 def send_telegram_document(file_path: Path, caption: str, chat_id: str = None):
-    target_chat_id = chat_id or TELEGRAM_CHAT_ID
-    if not target_chat_id:
-        print("⚠️ No Telegram Chat ID specified!")
-        return
+    target_chat = chat_id or TELEGRAM_CHAT_ID
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     import asyncio
-    asyncio.run(bot.send_document(chat_id=target_chat_id, document=open(file_path, "rb"), caption=caption))
+    asyncio.run(bot.send_document(chat_id=target_chat, document=open(file_path, "rb"), caption=caption))
 
-def main():
-    parser = argparse.ArgumentParser(description="LMS Bot Sweep & Check")
-    parser.add_argument("--course", type=str, help="Specific course title or ID to filter", default=None)
-    parser.add_argument("--chat-id", type=str, help="Telegram chat ID for alert delivery", default=None)
-    args = parser.parse_args()
-
-    target_chat_id = args.chat_id or TELEGRAM_CHAT_ID
-
+def main(target_course=None, target_chat_id=None):
     print("Cloud-ready Bot starting...")
     print("Checking session validity...")
     
@@ -81,7 +65,7 @@ def main():
             cookies = auto_login.auto_login(headless=True)
             auto_login.save_cookies(cookies, COOKIES_FILE)
             print("Auto-login successful! Fresh cookies saved.")
-            client = scraper.get_client() # Reload client with new cookies
+            client = scraper.get_client()
         except Exception as e:
             print(f"⚠️ Auto-login failed: {e}")
             send_telegram_alert("VIT LMS session expired and auto-login failed! Please check credentials.", chat_id=target_chat_id)
@@ -89,15 +73,15 @@ def main():
 
     print("Session is valid. Fetching enrolled courses...")
     courses = scraper.fetch_enrolled_courses(client)
-
-    if args.course:
-        target_filter = args.course.strip().lower()
-        courses = [
-            c for c in courses 
-            if target_filter in c.get("title", "").lower() 
-            or target_filter == c.get("assignment_id", "").lower()
-        ]
-        print(f"Filtered down to {len(courses)} matching course(s) for query: '{args.course}'")
+    
+    if target_course:
+        course_map = {
+            "os-lab": "Operating Systems",
+            "data-structures": "Data Structures"
+        }
+        search_term = course_map.get(target_course, target_course).lower()
+        courses = [c for c in courses if search_term in c['title'].lower()]
+        print(f"Filtering for specific course: {target_course}. Found {len(courses)} match(es).")
     else:
         print(f"Found {len(courses)} enrolled courses to monitor.")
 
@@ -113,16 +97,12 @@ def main():
             assign_id = assign["id"]
             assign_url = assign["url"]
             assign_title = assign["title"]
-            due_date = assign.get("due_date") # Ensure scraper returns due_date if available, or fallback
+            due_date = assign.get("due_date")
 
             if assign_id not in state["assignments"]:
                 new_found_count += 1
                 print(f"New assignment detected: {assign_id} - {assign_title}")
-                send_telegram_alert(
-                    f"New Assignment Detected!\nCourse: {course['title']}\nTask: {assign_title}", 
-                    url=assign_url, 
-                    chat_id=target_chat_id
-                )
+                send_telegram_alert(f"New Assignment Detected!\nCourse: {course['title']}\nTask: {assign_title}", url=assign_url, chat_id=target_chat_id)
 
                 print("Locating real attachment PDF link from assignment page...")
                 real_pdf_url = scraper.get_assignment_pdf_url(client, assign_url)
@@ -156,13 +136,12 @@ def main():
                     "title": assign_title,
                     "course": course['title'],
                     "url": assign_url,
-                    "due_date": due_date if due_date else "2026-12-31T23:59:59+00:00", # Fallback safety
+                    "due_date": due_date if due_date else "2026-12-31T23:59:59+00:00",
                     "reminders_sent": [],
                     "notified": True
                 }
                 save_state(state)
 
-    # Run deadline reminder checks
     print("Checking assignment reminders...")
     state = reminder.check_reminders(
         state, 
@@ -172,9 +151,18 @@ def main():
     save_state(state)
 
     if new_found_count == 0:
-        print("No new assignments found across any course. State is up to date.")
+        print("No new assignments found. State is up to date.")
+        if target_chat_id:
+            send_telegram_alert("Check complete! Koi nayi assignment nahi mili. Sab kuch up-to-date hai! 🎯", chat_id=target_chat_id)
     else:
         print(f"Successfully processed {new_found_count} new assignments!")
+        if target_chat_id:
+            send_telegram_alert(f"Check complete! {new_found_count} nayi assignment process ho gayi.", chat_id=target_chat_id)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="VIT LMS Bot")
+    parser.add_argument("--course", type=str, help="Specific course to check (e.g., os-lab)", default=None)
+    parser.add_argument("--chat-id", type=str, help="Telegram chat ID to reply to", default=None)
+    args = parser.parse_args()
+    
+    main(target_course=args.course, target_chat_id=args.chat_id)
