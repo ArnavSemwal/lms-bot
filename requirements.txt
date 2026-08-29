@@ -5,3 +5,5 @@ python-telegram-bot
 pdfplumber
 python-docx
 google-genai
+
+playwright
