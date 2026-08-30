@@ -1,0 +1,174 @@
+{
+  "assignments": {
+    "21334": {
+      "title": "Lab 8 MLFQ",
+      "course": "Operating Systems Lab",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21334",
+      "due_date": "2026-08-30T01:00:00+05:30",
+      "reminders_sent": [
+        "24h",
+        "6h"
+      ],
+      "notified": true
+    },
+    "20045": {
+      "title": "BACSE202_DBS_Lab4_MB_L7+L8",
+      "course": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20045",
+      "due_date": "2026-12-31T23:59:59+00:00",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "20225": {
+      "title": "BACSE202_DBS_Lab5_MB_L7+L8",
+      "course": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20225",
+      "due_date": "2026-12-31T23:59:59+00:00",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "20855": {
+      "title": "BACSE202_DBS_Lab6_MB_L7+L8",
+      "course": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20855",
+      "due_date": "2026-12-31T23:59:59+00:00",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "20914": {
+      "title": "BACSE202_DBS_Lab6_MB_L7+L8_Homework",
+      "course": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20914",
+      "due_date": "2026-12-31T23:59:59+00:00",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "21245": {
+      "title": "BACSE202_DBS_Lab_7_MB_L7+L8",
+      "course": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21245",
+      "due_date": "2026-12-31T23:59:59+00:00",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "19624": {
+      "title": "BACSE202_DBS_Lab3_MB_L7+L8",
+      "course": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=19624",
+      "due_date": "2026-12-31T23:59:59+00:00",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "19671": {
+      "title": "Digital Assignment 1",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=19671",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "20321": {
+      "title": "Test_1",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20321",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "20323": {
+      "title": "Lab4_Pthreads",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20323",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "20552": {
+      "title": "Test_D2",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20552",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "20469": {
+      "title": "Lab5 - CPU scheduling algorithms",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20469",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "20980": {
+      "title": "Lab 6- CPU Scheduling Algorithms-2 Submission",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20980",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "21300": {
+      "title": "PAT_1",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21300",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "21149": {
+      "title": "Lab 7- Banker's Algorithm",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21149",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": true
+    },
+    "21416": {
+      "title": "REPAT",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21416",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "21409": {
+      "title": "PAT_SET1",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21409",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "21410": {
+      "title": "PAT_SET2",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21410",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "21411": {
+      "title": "PAT_SET3",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=21411",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    },
+    "20571": {
+      "title": "Digital Assignment 1",
+      "course": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/mod/assign/view.php?id=20571",
+      "reminders_sent": [],
+      "notified": true,
+      "submitted": false
+    }
+  },
+  "last_run_at": null
+}
