@@ -1,20 +1,4 @@
-# .github/workflows/poll.yml
-#
-# Place this file at .github/workflows/poll.yml in your repo.
-#
-# Listens for THREE trigger types:
-#   1. schedule       - lab-day-aware polling (Tue/Thu every 2h, other days every 5h)
-#   2. workflow_dispatch - manual "Run workflow" button in GitHub's UI
-#   3. repository_dispatch (check_course) - fired by the Cloudflare Worker
-#      when you tap a course button in Telegram
-#
-# IMPORTANT: this assumes main.py accepts two optional CLI args:
-#   --course <value>     -> scrape just this one course, not the full sweep
-#   --chat-id <id>        -> reply to this specific Telegram chat
-# If main.py doesn't yet support these, that's the next thing to add before
-# this workflow's on-demand path will do anything useful.
-
-name: LMS Bot Poll
+﻿name: LMS Bot Poll
 
 on:
   schedule:
@@ -34,18 +18,28 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Check kill switch
+        id: control
+        run: |
+          if [ -f bot_control.json ] && ! grep -q '"enabled": true' bot_control.json; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Bot is paused via bot_control.json — skipping this run."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python
+        if: steps.control.outputs.enabled == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install playwright
+        if: steps.control.outputs.enabled == 'true'
+        run: pip install -r requirements.txt
 
       - name: Restore cached session cookies
+        if: steps.control.outputs.enabled == 'true'
         env:
           COOKIES_JSON: ${{ secrets.COOKIES_JSON }}
         run: |
@@ -54,16 +48,18 @@ jobs:
           fi
 
       - name: Cache Playwright browsers
+        if: steps.control.outputs.enabled == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
 
-      - name: Install Playwright browser and dependencies
+      - name: Install Playwright browser + system dependencies
+        if: steps.control.outputs.enabled == 'true'
         run: python -m playwright install --with-deps chromium
 
       - name: Run scheduled full sweep
-        if: github.event_name != 'repository_dispatch'
+        if: steps.control.outputs.enabled == 'true' && github.event_name != 'repository_dispatch'
         env:
           LMS_USERNAME: ${{ secrets.LMS_USERNAME }}
           LMS_PASSWORD: ${{ secrets.LMS_PASSWORD }}
@@ -73,7 +69,7 @@ jobs:
         run: python main.py
 
       - name: Run on-demand single-course check
-        if: github.event_name == 'repository_dispatch'
+        if: steps.control.outputs.enabled == 'true' && github.event_name == 'repository_dispatch'
         env:
           LMS_USERNAME: ${{ secrets.LMS_USERNAME }}
           LMS_PASSWORD: ${{ secrets.LMS_PASSWORD }}
@@ -84,27 +80,23 @@ jobs:
             --course "${{ github.event.client_payload.course }}" \
             --chat-id "${{ github.event.client_payload.chat_id }}"
 
-      - name: Persist fresh session cookies as a secret
-        if: success()
+      - name: Persist fresh session cookies
+        if: steps.control.outputs.enabled == 'true' && success()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           if [ -f cookies.json ] && [ -n "$GH_TOKEN" ]; then
-            gh secret set COOKIES_JSON --repo "${{ github.repository }}" -b "$(cat cookies.json)"
-          elif [ -z "$GH_TOKEN" ]; then
-            echo "::warning::GH_PAT secret not set. Skipping COOKIES_JSON auto-refresh."
+            gh secret set COOKIES_JSON --repo "${{ github.repository }}" --body-file=cookies.json
           fi
 
-      - name: Commit updated state.json
-        if: success()
+      - name: Commit updated state.json & filter configs
+        if: steps.control.outputs.enabled == 'true' && success()
         run: |
           git config user.name "lms-bot"
           git config user.email "lms-bot@users.noreply.github.com"
-          if [ -n "$(git status --porcelain state.json)" ]; then
-            git add state.json
-            git commit -m "Update state.json [skip ci]"
+          git add state.json blocked_log.json filter_config.json || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Update state and logs [skip ci]"
             git pull --rebase
             git push
-          else
-            echo "No state.json changes to commit."
           fi
