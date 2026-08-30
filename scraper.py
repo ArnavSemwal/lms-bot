@@ -37,16 +37,8 @@ def verify_session(client: httpx.Client) -> bool:
 
 def fetch_enrolled_courses(client: httpx.Client) -> list[dict]:
     return [
-        {
-            "id": "os",
-            "title": "Operating Systems (BACSE106)",
-            "url": f"{BASE_URL}/course/index.php"
-        },
-        {
-            "id": "dbs", 
-            "title": "Database Systems (BACSE202)",
-            "url": f"{BASE_URL}/course/index.php"
-        }
+        {"id": "os", "title": "Operating Systems (BACSE106)", "url": f"{BASE_URL}/course/index.php"},
+        {"id": "dbs", "title": "Database Systems (BACSE202)", "url": f"{BASE_URL}/course/index.php"}
     ]
 
 def fetch_course_assignments(client: httpx.Client, course_id: str) -> list[dict]:
@@ -69,45 +61,51 @@ def fetch_course_assignments(client: httpx.Client, course_id: str) -> list[dict]
                     title = a.get_text(strip=True)
                     title = re.sub(r'\s+is due.*$', '', title, flags=re.IGNORECASE)
                     
-                    # Relaxed check: DBS wali cheezein yahan jayengi, baaki OS me
                     is_dbs = "DBS" in title or "Joins" in title or "Database" in title
                     
-                    if course_id == "dbs":
-                        if is_dbs:
-                            assignments.append({
-                                "id": assign_id,
-                                "title": title if title else f"Assignment {assign_id}",
-                                "url": href
-                            })
-                    elif course_id == "os":
-                        if not is_dbs:
-                            assignments.append({
-                                "id": assign_id,
-                                "title": title if title else f"Assignment {assign_id}",
-                                "url": href
-                            })
+                    if course_id == "dbs" and is_dbs:
+                        assignments.append({"id": assign_id, "title": title if title else f"Assignment {assign_id}", "url": href})
+                    elif course_id == "os" and not is_dbs:
+                        assignments.append({"id": assign_id, "title": title if title else f"Assignment {assign_id}", "url": href})
 
     return assignments
 
-def get_assignment_pdf_url(client: httpx.Client, assign_url: str) -> str | None:
+def get_assignment_details(client: httpx.Client, assign_url: str) -> dict:
     resp = client.get(assign_url)
     if "login" in str(resp.url).lower() or resp.status_code in (401, 403):
         raise RuntimeError("Session appears invalid while fetching assignment page — re-login needed.")
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    candidates = []
 
+    candidates = []
     for a in soup.find_all("a", href=True):
         href = urljoin(assign_url, a["href"])
         if "pluginfile.php" in href:
             candidates.append(href)
-
-    if not candidates:
-        return None
-
+            
+    pdf_url = None
     for href in candidates:
         if href.lower().endswith(ATTACHMENT_EXTENSIONS):
-            return href
+            pdf_url = href
+            break
+    if pdf_url is None and candidates:
+        pdf_url = candidates[0]
 
-    return candidates[0]
+    status_text = None
+    for row in soup.find_all("tr"):
+        cells = row.find_all(["th", "td"])
+        if len(cells) >= 2 and "submission status" in cells[0].get_text(strip=True).lower():
+            status_text = cells[1].get_text(strip=True)
+            break
+
+    is_submitted = False
+    if status_text:
+        lowered = status_text.lower()
+        if "submitted" in lowered and "not submitted" not in lowered:
+            is_submitted = True
+
+    return {"pdf_url": pdf_url, "submission_status": status_text, "is_submitted": is_submitted}
+
+def get_assignment_pdf_url(client: httpx.Client, assign_url: str) -> str | None:
+    return get_assignment_details(client, assign_url)["pdf_url"]
