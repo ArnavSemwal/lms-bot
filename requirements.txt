@@ -1,9 +1,9 @@
-﻿httpx
+httpx
 beautifulsoup4
 python-dotenv
 python-telegram-bot
 pdfplumber
 python-docx
-google-genai
+openai
 
 playwright
