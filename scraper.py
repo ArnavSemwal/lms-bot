@@ -1,4 +1,4 @@
-﻿import re
+import re
 import json
 from pathlib import Path
 from urllib.parse import urljoin
@@ -36,37 +36,51 @@ def verify_session(client: httpx.Client) -> bool:
         return False
 
 def fetch_enrolled_courses(client: httpx.Client) -> list[dict]:
-    return [
-        {"id": "os", "title": "Operating Systems (BACSE106)", "url": f"{BASE_URL}/course/index.php"},
-        {"id": "dbs", "title": "Database Systems (BACSE202)", "url": f"{BASE_URL}/course/index.php"}
-    ]
+    config_path = Path("courses_config.json")
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                return json.load(f).get("courses", [])
+        except Exception as e:
+            print(f"Error reading courses_config.json: {e}")
+    return []
 
-def fetch_course_assignments(client: httpx.Client, course_id: str) -> list[dict]:
+def fetch_course_assignments(client: httpx.Client, course: dict) -> list[dict]:
     assignments = []
-    resp = client.get(DASHBOARD_URL)
+    course_url = course.get("url")
+    target_section = course.get("target_section")
+    
+    if not course_url or "YOUR_" in course_url:
+        print(f"Skipping {course.get('title')} - Invalid or placeholder URL.")
+        return []
+
+    resp = client.get(course_url)
     if "login" in str(resp.url).lower() or resp.status_code in (401, 403):
         raise RuntimeError("Session appears invalid — re-login needed.")
     
     soup = BeautifulSoup(resp.text, "html.parser")
     seen_ids = set()
     
-    for a in soup.find_all("a", href=True):
-        href = urljoin(BASE_URL, a["href"])
-        if "/mod/assign/view.php?id=" in href:
-            assign_match = re.search(r"[?&]id=(\d+)", href)
-            if assign_match:
-                assign_id = assign_match.group(1)
-                if assign_id not in seen_ids:
-                    seen_ids.add(assign_id)
-                    title = a.get_text(strip=True)
-                    title = re.sub(r'\s+is due.*$', '', title, flags=re.IGNORECASE)
-                    
-                    is_dbs = "DBS" in title or "Joins" in title or "Database" in title
-                    
-                    if course_id == "dbs" and is_dbs:
-                        assignments.append({"id": assign_id, "title": title if title else f"Assignment {assign_id}", "url": href})
-                    elif course_id == "os" and not is_dbs:
-                        assignments.append({"id": assign_id, "title": title if title else f"Assignment {assign_id}", "url": href})
+    if target_section:
+        header_tag = soup.find(lambda tag: tag.name in ["h2", "h3", "h4", "a"] and target_section.lower() in tag.get_text(strip=True).lower())
+        
+        if header_tag:
+            section_container = header_tag.find_parent(["li", "div"], class_=lambda c: c and "section" in c.lower())
+            if not section_container:
+                section_container = header_tag.parent.parent
+                
+            if section_container:
+                for a in section_container.find_all("a", href=True):
+                    href = urljoin(BASE_URL, a["href"])
+                    if "/mod/assign/view.php?id=" in href:
+                        assign_match = re.search(r"[?&]id=(\d+)", href)
+                        if assign_match:
+                            assign_id = assign_match.group(1)
+                            if assign_id not in seen_ids:
+                                seen_ids.add(assign_id)
+                                title = a.get_text(strip=True)
+                                title = re.sub(r'\s+is due.*$', '', title, flags=re.IGNORECASE)
+                                assignments.append({"id": assign_id, "title": title if title else f"Assignment {assign_id}", "url": href})
 
     return assignments
 

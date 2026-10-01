@@ -1,0 +1,16 @@
+{
+  "courses": [
+    {
+      "id": "os",
+      "title": "Operating Systems (BACSE106)",
+      "url": "https://lms.vit.ac.in/course/view.php?id=2116",
+      "target_section": "Dr. Ayesha Shaik L21+L22 Slot Lab"
+    },
+    {
+      "id": "dbs",
+      "title": "Database Systems (BACSE202)",
+      "url": "https://lms.vit.ac.in/course/view.php?id=2364",
+      "target_section": "BACSE202_DBS_Lab_MB_L7+L8"
+    }
+  ]
+}

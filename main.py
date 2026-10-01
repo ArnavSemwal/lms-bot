@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import json
 import argparse
@@ -75,7 +75,7 @@ def main(target_course=None, target_chat_id=None):
     allowlist = filters.load_allowlist()
 
     for course in courses:
-        assignments = scraper.fetch_course_assignments(client, course["id"])
+        assignments = scraper.fetch_course_assignments(client, course)
         
         for assign in assignments:
             assign_id = assign["id"]
