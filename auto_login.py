@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 COOKIES_FILE = Path("cookies.json")
-LOGIN_URL = "https://lms.vit.ac.in/login/index.php"
+LOGIN_URL = "https://lms.vit.ac.in/ldex.php"
 
 def auto_login(headless=True):
     username = os.environ["LMS_USERNAME"]
